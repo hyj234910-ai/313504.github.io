@@ -1,0 +1,432 @@
+/**
+ * K-pop 空專互助平台 (Google Apps Script 一體化程式碼)
+ * 試算表 ID：1VpkKG6vW4SFJhk4eq0IBhiR8anbyFn9WwqB2Ao0-Xps
+ */
+const SPREADSHEET_ID = '1VpkKG6vW4SFJhk4eq0IBhiR8anbyFn9WwqB2Ao0-Xps';
+
+function getSheet(name) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let s = ss.getSheetByName(name);
+  if (!s) {
+    s = ss.insertSheet(name);
+    if (name === 'Users') s.appendRow(['UserID', 'Name', 'Email', 'Password', 'IG', 'CreatedAt']);
+    if (name === 'Albums') s.appendRow(['AlbumID', 'Title', 'Group', 'Version', 'Condition', 'Delivery', 'Desc', 'Image', 'UploaderID', 'UploaderName', 'UploaderIg', 'Status', 'CreatedAt']);
+    if (name === 'Orders') s.appendRow(['OrderID', 'AlbumID', 'AlbumTitle', 'UploaderID', 'RequesterID', 'RequesterName', 'RealName', 'Phone', 'ContactOther', 'Address', 'Note', 'Status', 'CreatedAt']);
+  }
+  return s;
+}
+
+function doGet() {
+  const html = `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K-Share 韓團空專免費共享平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: sans-serif; background-color: #F7F5F0; color: #333130; }
+    .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <header class="sticky top-0 z-40 bg-[#F7F5F0]/90 backdrop-blur-md border-b border-[#E3DEC3] px-4 py-3">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div onclick="switchTab('home')" class="flex items-center gap-2 cursor-pointer">
+        <div class="w-9 h-9 rounded-xl bg-[#8A9A86] text-white flex items-center justify-center font-bold text-base">✨</div>
+        <div>
+          <h1 class="text-base font-bold text-[#4A5842]">K-Share <span class="text-[10px] px-2 py-0.5 rounded-full bg-[#E5D4CE] text-[#7A5A50]">空專免費共享</span></h1>
+          <p class="text-[10px] text-[#787571]">愛不浪費 · 讓空專找到下一位愛的粉絲</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="onUploadBtnClick()" class="px-3.5 py-1.5 rounded-full bg-[#8A9A86] text-white font-medium text-xs shadow-xs">📷 釋出空專</button>
+        <div id="authBtnArea">
+          <button onclick="openM('authModal')" class="px-3 py-1.5 rounded-full border border-[#8A9A86] text-[#5A6956] text-xs font-medium">登入 / 註冊</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+    <div class="flex items-center justify-between border-b border-[#E3DEC3] pb-3 mb-6">
+      <div class="flex gap-2">
+        <button id="tabBtnHome" onclick="switchTab('home')" class="px-4 py-2 rounded-xl font-medium text-xs bg-[#8A9A86] text-white">所有空專專區</button>
+        <button id="tabBtnOrders" onclick="switchTab('orders')" class="px-4 py-2 rounded-xl font-medium text-xs text-[#6E6A63] hover:bg-[#EAE4D9] hidden">索取通知 / 試算表訂單</button>
+      </div>
+    </div>
+
+    <div id="vHome">
+      <div class="mb-6 p-5 rounded-2xl bg-gradient-to-r from-[#8A9A86]/20 via-[#E5D4CE]/30 to-[#9A8F97]/20 border border-white">
+        <span class="inline-block px-2.5 py-0.5 rounded-full bg-white/80 text-[#5A6956] font-semibold text-[11px] mb-1">🌱 綠色 K-pop 永續共享社群</span>
+        <h2 class="text-xl font-bold text-[#3B4237]">讓收藏不佔空間，讓音樂愛意延續</h2>
+        <p class="text-xs text-[#5B5854] mt-1">完全免費贈送空專！索取填寫之【姓名、電話、門市】皆會自動備份寫入您的 Google 雲端試算表中。</p>
+      </div>
+      <div id="albumGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5"></div>
+    </div>
+
+    <div id="vOrders" class="hidden max-w-3xl mx-auto">
+      <h2 class="text-base font-bold text-[#3B4237] mb-4">🔔 我收到的索取訂單與寄件資料</h2>
+      <div id="ordersList" class="space-y-3"></div>
+    </div>
+  </main>
+
+  <!-- Auth Modal -->
+  <div id="authModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md hidden">
+    <div class="glass border border-white w-full max-w-md rounded-2xl p-6 relative">
+      <button onclick="closeM('authModal')" class="absolute top-4 right-4 text-gray-400 font-bold">✕</button>
+      <h3 class="text-base font-bold text-center text-[#3B4237] mb-4">歡迎加入 K-Share</h3>
+      <div class="flex rounded-xl bg-[#F0EBE1] p-1 mb-4 text-xs">
+        <button id="tabLog" onclick="setAuthMode('login')" class="flex-1 py-1.5 rounded-lg bg-white font-bold">信箱登入</button>
+        <button id="tabReg" onclick="setAuthMode('register')" class="flex-1 py-1.5 rounded-lg text-gray-500">驗證信箱註冊</button>
+      </div>
+      <form onsubmit="onAuthSubmit(event)" class="space-y-3 text-xs">
+        <div id="fgName" class="hidden"><label class="block font-medium mb-1">暱稱 / 姓名 *</label><input type="text" id="aName" class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <div><label class="block font-medium mb-1">電子信箱 *</label><input type="email" id="aEmail" required class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <div><label class="block font-medium mb-1">密碼 *</label><input type="password" id="aPass" required class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <div id="fgIg" class="hidden"><label class="block font-medium mb-1">Instagram 帳號</label><input type="text" id="aIg" class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <button type="submit" class="w-full py-2.5 bg-[#8A9A86] text-white font-semibold rounded-xl"><span id="aSubText">登入帳號</span></button>
+      </form>
+      <div class="my-3 text-center text-[10px] text-gray-400">或</div>
+      <button onclick="onIgLogin()" class="w-full py-2 border border-[#E08B9B]/40 bg-[#FFF5F6] text-[#B04C62] font-semibold rounded-xl text-xs">使用 Instagram 帳號快速登入</button>
+    </div>
+  </div>
+
+  <!-- Upload Modal -->
+  <div id="uploadModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md hidden">
+    <div class="glass border border-white w-full max-w-lg rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+      <button onclick="closeM('uploadModal')" class="absolute top-4 right-4 text-gray-400 font-bold">✕</button>
+      <h3 class="text-base font-bold text-center text-[#3B4237] mb-4">刊登 / 釋出空專</h3>
+      <form onsubmit="onUploadSubmit(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block font-medium mb-1">照片 (拍照/相冊)</label>
+          <div id="imgPrevBox" class="hidden relative aspect-video rounded-xl overflow-hidden mb-2">
+            <img id="imgPrev" class="w-full h-full object-cover">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" onclick="document.getElementById('cInp').click()" class="p-2.5 rounded-xl border border-dashed border-[#8A9A86] bg-[#8A9A86]/10 text-[#5A6956] font-medium">📷 手機拍照</button>
+            <button type="button" onclick="document.getElementById('fInp').click()" class="p-2.5 rounded-xl border border-dashed border-gray-300 bg-white text-gray-600 font-medium">🖼 相冊選擇</button>
+          </div>
+          <input type="file" id="cInp" accept="image/*" capture="environment" onchange="onImgPicked(event)" class="hidden">
+          <input type="file" id="fInp" accept="image/*" onchange="onImgPicked(event)" class="hidden">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="block font-medium mb-1">韓團 / 歌手 *</label><input type="text" id="uGroup" required class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+          <div><label class="block font-medium mb-1">專輯名稱 *</label><input type="text" id="uTitle" required class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="block font-medium mb-1">版本</label><input type="text" id="uVer" class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+          <div><label class="block font-medium mb-1">物況</label><select id="uCond" class="w-full px-3 py-2 rounded-xl border bg-white"><option value="9.9成新 (僅拆封無卡)">9.9成新 (僅拆封無卡)</option><option value="全新未拆膜">全新未拆膜</option></select></div>
+        </div>
+        <div><label class="block font-medium mb-1">運送方式</label><select id="uDeliv" class="w-full px-3 py-2 rounded-xl border bg-white"><option value="7-11 賣貨便">7-11 賣貨便</option><option value="全家 店到店">全家 店到店</option></select></div>
+        <div><label class="block font-medium mb-1">詳細描述</label><textarea id="uDesc" rows="2" class="w-full px-3 py-2 rounded-xl border bg-white resize-none"></textarea></div>
+        <button type="submit" class="w-full py-2.5 bg-[#8A9A86] text-white font-semibold rounded-xl">確認刊登並寫入試算表</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Claim Modal -->
+  <div id="claimModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md hidden">
+    <div class="glass border border-white w-full max-w-lg rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+      <button onclick="closeM('claimModal')" class="absolute top-4 right-4 text-gray-400 font-bold">✕</button>
+      <h3 id="cModalTitle" class="text-base font-bold text-center text-[#3B4237] mb-3">免費索取空專</h3>
+      <form onsubmit="onClaimSubmit(event)" class="space-y-3 text-xs">
+        <div><label class="block font-medium mb-1">【真實姓名】 *</label><input type="text" id="cRealName" required placeholder="超商取貨身分核對" class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <div><label class="block font-medium mb-1">【聯絡電話】 *</label><input type="tel" id="cPhone" required placeholder="0912-345-678" class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <div><label class="block font-medium mb-1">【其他聯絡方式】 (IG/Line)</label><input type="text" id="cOther" placeholder="@my_ig" class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <div><label class="block font-medium mb-1">【收件地址 / 門市店號】 *</label><textarea id="cAddress" rows="2" required placeholder="7-11 鑫東門門市 (店號: 123456)..." class="w-full px-3 py-2 rounded-xl border bg-white resize-none"></textarea></div>
+        <div><label class="block font-medium mb-1">感謝留言</label><input type="text" id="cNote" placeholder="謝謝物主分享！" class="w-full px-3 py-2 rounded-xl border bg-white"></div>
+        <button type="submit" class="w-full py-2.5 bg-[#8A9A86] text-white font-semibold rounded-xl">確認送出索取並寫入試算表</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let albums = [], curUser = null, targetAlb = null, imgBase64 = '', authMode = 'login';
+
+    window.onload = function() {
+      const u = localStorage.getItem('kuser');
+      if (u) curUser = JSON.parse(u);
+      renderAuthBtn();
+      loadAlbums();
+    };
+
+    function renderAuthBtn() {
+      const area = document.getElementById('authBtnArea');
+      if (curUser) {
+        area.innerHTML = '<div class="flex items-center gap-1.5 text-xs font-semibold"><span class="w-7 h-7 rounded-full bg-[#E5D4CE] text-[#7A5A50] flex items-center justify-center font-bold">' + curUser.name.charAt(0) + '</span><span>' + curUser.name + '</span><button onclick="logout()" class="text-gray-400 hover:text-red-400 ml-1">登出</button></div>';
+        document.getElementById('tabBtnOrders').classList.remove('hidden');
+      } else {
+        area.innerHTML = '<button onclick="openM(\'authModal\')" class="px-3 py-1.5 rounded-full border border-[#8A9A86] text-[#5A6956] text-xs font-medium">登入 / 註冊</button>';
+        document.getElementById('tabBtnOrders').classList.add('hidden');
+      }
+    }
+
+    function loadAlbums() {
+      google.script.run.withSuccessHandler(function(res) {
+        albums = res || [];
+        renderGrid();
+      }).apiGetAlbums();
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById('albumGrid');
+      if (!albums || albums.length === 0) {
+        grid.innerHTML = '<div class="col-span-full text-center py-12 text-gray-400 text-xs">目前尚無空專資料，點擊右上角【釋出空專】開始分享吧！</div>';
+        return;
+      }
+      grid.innerHTML = albums.map(a => {
+        const isC = a.status === 'claimed';
+        return '<div class="bg-white rounded-2xl overflow-hidden border border-[#E8E3D8] flex flex-col text-xs">' +
+          '<div class="relative aspect-square bg-[#F0EBE1]">' +
+            '<img src="' + (a.imageUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80') + '" class="w-full h-full object-cover ' + (isC ? 'grayscale opacity-70' : '') + '">' +
+            '<div class="absolute top-2 left-2">' + (isC ? '<span class="px-2 py-0.5 rounded-full text-[10px] bg-gray-500 text-white">已被索取</span>' : '<span class="px-2 py-0.5 rounded-full text-[10px] bg-[#8A9A86] text-white">可免費索取</span>') + '</div>' +
+          '</div>' +
+          '<div class="p-3 flex-1 flex flex-col justify-between">' +
+            '<div><div class="flex justify-between text-[#8A9A86] font-bold mb-1"><span>' + a.groupName + '</span><span class="text-gray-400 font-normal">' + a.deliveryMethod + '</span></div>' +
+            '<h3 class="font-bold text-sm text-[#3A3835]">' + a.albumTitle + '</h3>' +
+            '<p class="text-gray-500 mt-0.5">版本：' + a.version + '</p><p class="text-gray-500">物況：' + a.condition + '</p></div>' +
+            '<div class="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between"><span class="text-gray-500">物主: ' + a.uploaderName + '</span>' +
+            (!isC ? '<button onclick="openClaimM(\'' + a.id + '\')" class="px-2.5 py-1 rounded-lg bg-[#8A9A86] text-white font-semibold">免費索取</button>' : '<span class="text-gray-400">已發送</span>') +
+          '</div></div></div>';
+      }).join('');
+    }
+
+    function setAuthMode(m) {
+      authMode = m;
+      document.getElementById('tabLog').className = m === 'login' ? 'flex-1 py-1.5 rounded-lg bg-white font-bold' : 'flex-1 py-1.5 rounded-lg text-gray-500';
+      document.getElementById('tabReg').className = m === 'register' ? 'flex-1 py-1.5 rounded-lg bg-white font-bold' : 'flex-1 py-1.5 rounded-lg text-gray-500';
+      document.getElementById('fgName').className = m === 'register' ? 'block' : 'hidden';
+      document.getElementById('fgIg').className = m === 'register' ? 'block' : 'hidden';
+      document.getElementById('aSubText').innerText = m === 'login' ? '登入帳號' : '發送信箱驗證註冊';
+    }
+
+    function onAuthSubmit(e) {
+      e.preventDefault();
+      const p = { email: document.getElementById('aEmail').value, password: document.getElementById('aPass').value };
+      if (authMode === 'register') {
+        p.name = document.getElementById('aName').value;
+        p.ig = document.getElementById('aIg').value;
+        google.script.run.withSuccessHandler(function(res) {
+          if (res.success) { curUser = res.user; saveUser(); alert('🎉 註冊成功並寫入試算表 Users 分頁！'); } else alert(res.message);
+        }).apiRegisterUser(p);
+      } else {
+        google.script.run.withSuccessHandler(function(res) {
+          if (res.success) { curUser = res.user; saveUser(); } else alert(res.message);
+        }).apiLoginUser(p);
+      }
+    }
+
+    function onIgLogin() {
+      const h = prompt('請輸入 Instagram 帳號：', 'kpop_fan');
+      if (!h) return;
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) { curUser = res.user; saveUser(); }
+      }).apiLoginWithIg({ igHandle: h });
+    }
+
+    function saveUser() {
+      localStorage.setItem('kuser', JSON.stringify(curUser));
+      renderAuthBtn();
+      closeM('authModal');
+    }
+
+    function logout() {
+      curUser = null;
+      localStorage.removeItem('kuser');
+      renderAuthBtn();
+      switchTab('home');
+    }
+
+    function onUploadBtnClick() {
+      if (!curUser) openM('authModal');
+      else openM('uploadModal');
+    }
+
+    function onImgPicked(e) {
+      const f = e.target.files[0];
+      if (f) {
+        const r = new FileReader();
+        r.onloadend = function() {
+          imgBase64 = r.result;
+          document.getElementById('imgPrev').src = imgBase64;
+          document.getElementById('imgPrevBox').classList.remove('hidden');
+        };
+        r.readAsDataURL(f);
+      }
+    }
+
+    function onUploadSubmit(e) {
+      e.preventDefault();
+      const p = {
+        albumTitle: document.getElementById('uTitle').value,
+        groupName: document.getElementById('uGroup').value,
+        version: document.getElementById('uVer').value || '隨機版本',
+        condition: document.getElementById('uCond').value,
+        deliveryMethod: document.getElementById('uDeliv').value,
+        description: document.getElementById('uDesc').value,
+        imageUrl: imgBase64 || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
+        uploaderId: curUser.userId,
+        uploaderName: curUser.name,
+        uploaderIg: curUser.ig || '@kpop_fan'
+      };
+      google.script.run.withSuccessHandler(function() {
+        closeM('uploadModal');
+        alert('🎉 刊登成功，資料已寫入 Google 試算表 Albums 工作表！');
+        loadAlbums();
+      }).apiAddAlbum(p);
+    }
+
+    function openClaimM(id) {
+      if (!curUser) { openM('authModal'); return; }
+      targetAlb = albums.find(a => a.id === id);
+      document.getElementById('cModalTitle').innerText = '免費索取《' + targetAlb.albumTitle + '》';
+      openM('claimModal');
+    }
+
+    function onClaimSubmit(e) {
+      e.preventDefault();
+      const p = {
+        albumId: targetAlb.id,
+        albumTitle: targetAlb.albumTitle,
+        uploaderId: targetAlb.uploaderId,
+        requesterId: curUser.userId,
+        requesterName: curUser.name,
+        realName: document.getElementById('cRealName').value,
+        phone: document.getElementById('cPhone').value,
+        contactOther: document.getElementById('cOther').value || curUser.ig || '無',
+        address: document.getElementById('cAddress').value,
+        note: document.getElementById('cNote').value
+      };
+      google.script.run.withSuccessHandler(function() {
+        closeM('claimModal');
+        alert('✨ 索取成功！完整姓名與收件門市已寫入 Google 試算表 Orders 頁籤！');
+        loadAlbums();
+      }).apiCreateOrder(p);
+    }
+
+    function loadOrders() {
+      if (!curUser) return;
+      google.script.run.withSuccessHandler(function(list) {
+        const box = document.getElementById('ordersList');
+        if (list && list.length > 0) {
+          box.innerHTML = list.map(o => 
+            '<div class="bg-white p-3.5 rounded-2xl border border-gray-200 text-xs space-y-1">' +
+              '<p class="font-bold text-[#8A9A86] border-b pb-1">索取空專：' + o.albumTitle + '</p>' +
+              '<p class="text-gray-800 font-bold">收件姓名：' + o.realName + '</p>' +
+              '<p class="text-gray-600">電話：' + o.phone + ' | IG/Line：' + o.contactOther + '</p>' +
+              '<p class="text-gray-600">門市地址：<span class="font-bold text-black">' + o.address + '</span></p>' +
+            '</div>'
+          ).join('');
+        } else {
+          box.innerHTML = '<p class="text-xs text-center text-gray-400 py-8">目前試算表中尚無您的索取訂單記錄</p>';
+        }
+      }).apiGetUserOrders(curUser.userId);
+    }
+
+    function openM(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeM(id) { document.getElementById(id).classList.add('hidden'); }
+    function switchTab(t) {
+      document.getElementById('vHome').className = t === 'home' ? 'block' : 'hidden';
+      document.getElementById('vOrders').className = t === 'orders' ? 'block' : 'hidden';
+      document.getElementById('tabBtnHome').className = t === 'home' ? 'px-4 py-2 rounded-xl font-medium text-xs bg-[#8A9A86] text-white' : 'px-4 py-2 rounded-xl font-medium text-xs text-[#6E6A63] hover:bg-[#EAE4D9]';
+      document.getElementById('tabBtnOrders').className = t === 'orders' ? 'px-4 py-2 rounded-xl font-medium text-xs bg-[#8A9A86] text-white' : 'px-4 py-2 rounded-xl font-medium text-xs text-[#6E6A63] hover:bg-[#EAE4D9]';
+      if (t === 'orders') loadOrders();
+    }
+  </script>
+</body>
+</html>`;
+
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('K-Share 韓團空專免費共享平台')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function apiGetAlbums() {
+  const values = getSheet('Albums').getDataRange().getValues();
+  const albums = [];
+  for (let i = 1; i < values.length; i++) {
+    albums.push({
+      id: values[i][0], albumTitle: values[i][1], groupName: values[i][2], version: values[i][3],
+      condition: values[i][4], deliveryMethod: values[i][5], description: values[i][6], imageUrl: values[i][7],
+      uploaderId: values[i][8], uploaderName: values[i][9], uploaderIg: values[i][10], status: values[i][11]
+    });
+  }
+  return albums.reverse();
+}
+
+function apiRegisterUser(data) {
+  const sheet = getSheet('Users');
+  const values = sheet.getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][2] === data.email) return { success: false, message: '信箱已被註冊！' };
+  }
+  const id = 'USR-' + Date.now();
+  sheet.appendRow([id, data.name, data.email, data.password, data.ig || '', new Date().toISOString()]);
+  return { success: true, user: { userId: id, name: data.name, email: data.email, ig: data.ig || '' } };
+}
+
+function apiLoginUser(data) {
+  const values = getSheet('Users').getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][2] === data.email && values[i][3] === data.password) {
+      return { success: true, user: { userId: values[i][0], name: values[i][1], email: values[i][2], ig: values[i][4] } };
+    }
+  }
+  return { success: false, message: '信箱或密碼錯誤！' };
+}
+
+function apiLoginWithIg(data) {
+  const sheet = getSheet('Users');
+  const values = sheet.getDataRange().getValues();
+  const handle = data.igHandle.startsWith('@') ? data.igHandle : '@' + data.igHandle;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][4] === handle) return { success: true, user: { userId: values[i][0], name: values[i][1], email: values[i][2], ig: values[i][4] } };
+  }
+  const id = 'IG-' + Date.now();
+  const name = handle.replace('@', '');
+  sheet.appendRow([id, name, name + '@instagram.user', 'IG_OAUTH', handle, new Date().toISOString()]);
+  return { success: true, user: { userId: id, name: name, email: name + '@instagram.user', ig: handle } };
+}
+
+function apiAddAlbum(data) {
+  const id = 'ALB-' + Date.now();
+  getSheet('Albums').appendRow([
+    id, data.albumTitle, data.groupName, data.version || '隨機', data.condition,
+    data.deliveryMethod, data.description || '', data.imageUrl, data.uploaderId, data.uploaderName,
+    data.uploaderIg, 'available', new Date().toISOString()
+  ]);
+  return { success: true };
+}
+
+function apiCreateOrder(data) {
+  const oSheet = getSheet('Orders');
+  const aSheet = getSheet('Albums');
+  oSheet.appendRow([
+    'ORD-' + Date.now(), data.albumId, data.albumTitle, data.uploaderId, data.requesterId, data.requesterName,
+    data.realName, data.phone, data.contactOther, data.address, data.note || '', 'Pending', new Date().toISOString()
+  ]);
+  const aVals = aSheet.getDataRange().getValues();
+  for (let i = 1; i < aVals.length; i++) {
+    if (aVals[i][0] === data.albumId) {
+      aSheet.getRange(i + 1, 12).setValue('claimed');
+      break;
+    }
+  }
+  return { success: true };
+}
+
+function apiGetUserOrders(userId) {
+  const values = getSheet('Orders').getDataRange().getValues();
+  const orders = [];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][3] === userId) {
+      orders.push({
+        orderId: values[i][0], albumTitle: values[i][2], realName: values[i][6],
+        phone: values[i][7], contactOther: values[i][8], address: values[i][9]
+      });
+    }
+  }
+  return orders.reverse();
+}
